@@ -105,7 +105,7 @@ namespace msckf_mono {
 
         imuState<_S> imu_state_prop = propogateImuStateRK(imu_state_, measurement_);
 
-        // F * dt
+        // F * dtvml_imu_state_
         F_ *= measurement_.dT;
 
         // Matrix exponential
@@ -141,12 +141,14 @@ namespace msckf_mono {
         imu_state_.v_I_G_null = imu_state_.v_I_G;
         imu_state_.p_I_G_null = imu_state_.p_I_G;
 
+        vml_imu_state_ = imu_state_;
+
         imu_covar_ = (imu_covar_prop + imu_covar_prop.transpose()) / 2.0;
         imu_cam_covar_ = Phi_ * imu_cam_covar_;
       }
 
       // Generates a new camera state and adds it to the full state and covariance.
-      void augmentState(const int& state_id, const _S& time) {
+      void augmentState(const int& state_id, const double& time) {
         map_.clear();
 
         // Compute camera_ pose from current IMU pose 
@@ -201,6 +203,7 @@ namespace msckf_mono {
 
         cam_state.imustate_pred = imu_state_;
         cam_state.isdetect = false;
+
         // Break everything into appropriate structs
         cam_states_.push_back(cam_state);
         imu_covar_ = P_aug.template block<15, 15>(0, 0);
@@ -449,20 +452,82 @@ namespace msckf_mono {
 
           measurementUpdate(H_o, r_o, R_o);
 
-          cal_vml()  
+          cal_vml();  
+        }
+        else{
+          vml_imu_state_ = imu_state_; 
         }
       }
 
-
       void cal_vml(){
-        MatrixX<float> X_x = MatrixX<float>::Ones(cam_states_.size(),2);
-        MatrixX<float> Y_x = MatrixX<float>::Zero(cam_states_.size(),1);
-        MatrixX<float> X_y = MatrixX<float>::Ones(cam_states_.size(),2);
-        MatrixX<float> Y_y = MatrixX<float>::Zero(cam_states_.size(),1);
-        for (size_t c_i = 0; c_i < cam_states_.size(); c_i++){
-          if cam_states_[c_i].isdetect{
-            
+        MatrixX<_S> X = MatrixX<_S>::Ones(cam_states_.size(),2);
+        MatrixX<_S> Y_x = MatrixX<_S>::Zero(cam_states_.size(),1);
+        MatrixX<_S> Y_y = MatrixX<_S>::Zero(cam_states_.size(),1);
+        camState<_S> cam_pre; 
+        bool first = true;
+        int counter = 0;
+        int n = cam_states_.size();
+        for (size_t c_i = 0; c_i < n; c_i++){
+          if (first){
+            cam_pre = cam_states_[c_i];
+            first = false;
+            continue;
           }
+
+          if (cam_states_[c_i].isdetect && cam_pre.isdetect){
+            
+            double a = cam_states_[c_i].time - cam_pre.time;
+            X(counter, 1) = (float)a;
+            // std::cout.setf(std::ios::fixed);
+            // std::cout.precision(3); // 精度为输出小数点后3位
+            // std::cout << X(counter, 1) << std::endl;
+            Y_x(counter, 0) = cam_states_[c_i].imustate_pred.p_I_G(0) - cam_states_[c_i].imustate_detect.p_I_G(0);
+            
+            Y_y(counter, 0) = cam_states_[c_i].imustate_pred.p_I_G(1) - cam_states_[c_i].imustate_detect.p_I_G(1);
+            counter ++;
+          }          
+        }
+
+        // std::cout << counter << std::endl;
+        if (counter > 3 ){
+          X.conservativeResize(counter,2);
+          Y_x.conservativeResize(counter,1);
+          Y_y.conservativeResize(counter,1);
+
+          Matrix<float,2,1> beta_x,beta_y;
+          Matrix2f X_X = X.transpose()*X;
+          
+          beta_x = X_X.inverse()*X.transpose()* Y_x;
+          beta_y = X_X.inverse()*X.transpose()* Y_y;
+
+          vml_imu_state_ = cam_states_[n-1].imustate_detect;
+          Matrix<float,2,1> vml_x,vml_y,x_pred,y_pred;
+          Matrix<float,2,2> time = Matrix2f::Identity(2,2);
+          for (size_t c_i = 1; c_i < cam_states_.size(); c_i++){
+            x_pred(0,0) = cam_states_[c_i].imustate_pred.p_I_G(0);
+            x_pred(1,0) = cam_states_[c_i].imustate_pred.v_I_G(0);
+            y_pred(0,0) = cam_states_[c_i].imustate_pred.p_I_G(1);
+            y_pred(1,0) = cam_states_[c_i].imustate_pred.v_I_G(1);
+            // std::cout << cam_states_[c_i].imustate_pred.p_I_G << std::endl;
+            time(0,1) = cam_states_[c_i].time - cam_pre.time; // problem all have to be updated
+            // std::cout << cam_states_[c_i].time - cam_pre.time << std::endl;
+            vml_x = x_pred - time*beta_x;
+            vml_y = y_pred - time*beta_y;
+            // std::cout << vml_x << std::endl;
+            cam_states_[c_i].imustate_pred.p_I_G(0) = vml_x(0,0);
+            cam_states_[c_i].imustate_pred.v_I_G(0) = vml_x(1,0);
+            cam_states_[c_i].imustate_pred.p_I_G(1) = vml_y(0,0);
+            cam_states_[c_i].imustate_pred.v_I_G(1) = vml_y(1,0);
+          }
+          
+          vml_imu_state_ = cam_states_[n-1].imustate_detect;
+          vml_imu_state_.p_I_G(0) = vml_x(0,0);
+          vml_imu_state_.v_I_G(0) = vml_x(1,0);
+          vml_imu_state_.p_I_G(1) = vml_y(0,0);
+          vml_imu_state_.v_I_G(1) = vml_y(1,0);
+        }
+        else{
+          vml_imu_state_ = imu_state_;
         }
       }
       // Removes camera states that are not considered 'keyframes' (too close in distance or
@@ -1398,9 +1463,9 @@ namespace msckf_mono {
           imu_state_.b_a += deltaX.template segment<3>(9);
           imu_state_.v_I_G += deltaX.template segment<3>(6);
           imu_state_.p_I_G += deltaX.template segment<3>(12);
-
-          cam_states_[-1].imustate_detect = imu_state_;
-          cam_states_[-1].isdetect = true;
+          int n = cam_states_.size();
+          cam_states_[n-1].imustate_detect = imu_state_;
+          cam_states_[n-1].isdetect = true;
           // Update Camera<_S> states
           for (size_t c_i = 0; c_i < cam_states_.size(); c_i++) {
             Quaternion<_S> q_CG_up = buildUpdateQuat(deltaX.template segment<3>(15 + 6 * c_i)) *
@@ -1408,7 +1473,6 @@ namespace msckf_mono {
             cam_states_[c_i].q_CG = q_CG_up.normalized();
             cam_states_[c_i].p_C_G += deltaX.template segment<3>(18 + 6 * c_i);
           }
-
 
           // Covariance correction
           MatrixX<_S> tempMat = MatrixX<_S>::Identity(15 + 6 * cam_states_.size(),

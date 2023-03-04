@@ -54,20 +54,6 @@ namespace msckf_mono {
       Point<_Scalar> p_C_I;
     };
 
-  template <typename _Scalar>
-    struct camState {
-      EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-
-        Point<_Scalar> p_C_G;
-      Quaternion<_Scalar> q_CG;
-      _Scalar time;
-      int state_id;
-      int last_correlated_id;
-      std::vector<size_t> tracked_feature_ids;
-      struct imuState imustate_pred;
-      struct imuState imustate_detect;
-      bool isdetect;
-    };
 
   template <typename _Scalar>
     struct imuState {
@@ -76,6 +62,22 @@ namespace msckf_mono {
       Point<_Scalar> p_I_G, p_I_G_null;
       Vector3<_Scalar> v_I_G, b_g, b_a, g, v_I_G_null;
       Quaternion<_Scalar> q_IG, q_IG_null;
+    };
+
+    template <typename _Scalar>
+    struct camState {
+      EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+      Point<_Scalar> p_C_G;
+      Quaternion<_Scalar> q_CG;
+      double time;
+      int state_id;
+      int last_correlated_id;
+      std::vector<size_t> tracked_feature_ids;
+      bool isdetect;
+      imuState<_Scalar> imustate_pred;
+      imuState<_Scalar> imustate_detect;
+      
     };
 
   template <typename _Scalar>

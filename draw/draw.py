@@ -2,28 +2,39 @@ from cProfile import label
 import numpy as np
 import math
 import matplotlib.pyplot as plt
-file_name = "test.txt"
-save_name = "test.png"
-read_path = "draw/data/" + file_name
+read_path = "/home/nesc/ldd/msckf_vml/src/msckf_mono/draw/data/vml_1.txt"
+save_path = "/home/nesc/ldd/msckf_vml/src/msckf_mono/draw/data/vml_1.png"
+
 data = np.loadtxt(read_path, delimiter=',',skiprows=1)
 time = data[:,0]
-msckf_pos = data[:,1:4]
-gt_pos = data[:,4:7]
-msckf_att = data[:,13:17]
-gt_att = data[:,13:17]
-error_pos = np.sum((msckf_pos-gt_pos) * (msckf_pos-gt_pos),axis=1)
-error_pos = np.sqrt(error_pos)
-print(error_pos.shape[0])
-print(np.sum(error_pos)/error_pos.shape[0])
+time = time - time[0]
+gt_pos = data[:,1:4]
+gt_att = data[:,4:7]
+msckf_pos = data[:,8:11]
+msckf_att = data[:,11:14]
+
+vml_pos = data[:,15:18]
+vml_att = data[:,18:21]
+
+error_msckf = np.sum((msckf_pos-gt_pos) * (msckf_pos-gt_pos),axis=1)
+error_msckf = np.sum(error_msckf)/error_msckf.shape[0]
+print("msckf",math.sqrt(error_msckf))
+
+error_vml = np.sum((msckf_pos-gt_pos) * (msckf_pos-gt_pos),axis=1)
+error_vml = np.sum(error_vml)/error_vml.shape[0]
+print("vml",math.sqrt(error_vml))
+
 fig, ax = plt.subplots(2, 3)
 for i in range(2):
     for j in range(3):
         if i ==0:
-            ax[i][j].plot(time, msckf_pos[:,j], 'r*', label="msckf")
-            ax[i][j].plot(time, gt_pos[:,j], 'b*', label="gt")
+            ax[i][j].plot(time, msckf_pos[:,j], 'r', label="msckf")
+            ax[i][j].plot(time, gt_pos[:,j], 'b', label="gt")
+            ax[i][j].plot(time, vml_pos[:,j], 'g', label="vml")
         else:
-            ax[i][j].plot(time, msckf_att[:,j], 'r*', label="msckf")
-            ax[i][j].plot(time, gt_att[:,j], 'b*', label="gt")
+            ax[i][j].plot(time, msckf_att[:,j], 'r', label="msckf")
+            ax[i][j].plot(time, gt_att[:,j], 'b', label="gt")
+            ax[i][j].plot(time, vml_att[:,j], 'g', label="vml")
 
 # for i in range(3):
 #     for j in range(3):
@@ -40,7 +51,7 @@ ax[1, 2].set_title("attitude z")
 lines, labels = fig.axes[-1].get_legend_handles_labels()
 fig.legend(lines, labels)
 fig.tight_layout()
-save_path = "draw/data/" + save_name
+
 plt.savefig(save_path, dpi=300)
 plt.show()
 

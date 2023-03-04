@@ -13,45 +13,9 @@ namespace msckf_mono
 
     odom_pub_ = nh.advertise<nav_msgs::Odometry>("odom", 100);
     track_image_pub_ = it_.advertise("track_overlay_image", 1);
-    gt_track_pub_ = nh.advertise<nav_msgs::Odometry>("ground_truth_path", 100);
     imu_sub_ = nh_.subscribe("imu", 200, &RosInterface::imuCallback, this);
     image_sub_ = it_.subscribe("image_mono", 20,
                                &RosInterface::imageCallback, this);
-    gt_sub_ = nh.subscribe("/vicon/firefly_sbx/firefly_sbx", 10, &RosInterface::gtCallback,this);
-  }
-
-  void RosInterface::gtCallback(const geometry_msgs::TransformStampedConstPtr& vicon_gt)
-  {
-    gt_pose.header.stamp = vicon_gt->header.stamp;
-    gt_pose.header.frame_id = "map";
-    
-    Quaternion <float> vicon_q(vicon_gt->transform.rotation.w,vicon_gt->transform.rotation.x,
-      vicon_gt->transform.rotation.y,vicon_gt->transform.rotation.z);
-    
-    T_vicon_world = Isometry3f::Identity();
-    T_vicon_world.linear() = vicon_q.toRotationMatrix();
-
-    Vector3<float> vicon_t;
-    vicon_t << vicon_gt->transform.translation.x,vicon_gt->transform.translation.y,vicon_gt->transform.translation.z;
-    T_vicon_world.translation() = vicon_t;
-
-    Isometry3f T_IG;
-    T_IG.linear() = init_imu_state_.q_IG.toRotationMatrix();
-    T_IG.translation() << 0.0,0.0,0.0;
-
-    // Isometry3f gt = T_IG * T_vicon_imu * T_world_vicon1 * T_vicon_world;
-    Isometry3f gt = T_vicon_world;
-    Quaternion<float> gt_q(gt.linear());
-
-    gt_pose.pose.pose.position.x = gt.translation().x();
-    gt_pose.pose.pose.position.y = gt.translation().y();
-    gt_pose.pose.pose.position.z = gt.translation().z();
-    gt_pose.pose.pose.orientation.x = gt_q.inverse().x();
-    gt_pose.pose.pose.orientation.y = gt_q.inverse().y();
-    gt_pose.pose.pose.orientation.z = gt_q.inverse().z();
-    gt_pose.pose.pose.orientation.w = gt_q.inverse().w();
-
-    return;
   }
 
   void RosInterface::imuCallback(const sensor_msgs::ImuConstPtr& imu)
@@ -83,6 +47,8 @@ namespace msckf_mono
   void RosInterface::imageCallback(const sensor_msgs::ImageConstPtr& msg)
   {
     double cur_image_time = msg->header.stamp.toSec();
+    
+    // std::cout << cur_image_time << std::endl;
     cv_bridge::CvImagePtr cv_ptr;
     try
     {
@@ -143,7 +109,7 @@ namespace msckf_mono
     corner_detector::IdVector new_ids;
     track_handler_->new_features(new_features, new_ids);
 
-    msckf_.augmentState(state_k_, (float)cur_image_time);
+    msckf_.augmentState(state_k_, cur_image_time);
     msckf_.update(cur_features, cur_ids);
     msckf_.addFeatures(new_features, new_ids);
     msckf_.marginalize();
@@ -175,8 +141,6 @@ namespace msckf_mono
     odom.pose.pose.orientation.z = q_out.z();
 
     odom_pub_.publish(odom);
-
-    gt_track_pub_.publish(gt_pose);
 
   }
 
@@ -224,15 +188,12 @@ namespace msckf_mono
 
     init_imu_state_.b_g = gyro_mean;
     init_imu_state_.g << 0.0, 0.0, -9.81;
-    // init_imu_state_.q_IG = Quaternion<float>::FromTwoVectors(
-    //     -init_imu_state_.g, accel_mean);
-    Quaternion<float> q_vicon(T_vicon_world.linear());
-    init_imu_state_.q_IG = q_vicon;
+    init_imu_state_.q_IG = Quaternion<float>::FromTwoVectors(
+        -init_imu_state_.g, accel_mean);
 
     init_imu_state_.b_a = init_imu_state_.q_IG*init_imu_state_.g + accel_mean;
 
-    // init_imu_state_.p_I_G.setZero();
-    init_imu_state_.p_I_G = T_vicon_world.translation();
+    init_imu_state_.p_I_G.setZero();
     init_imu_state_.v_I_G.setZero();
     const auto q = init_imu_state_.q_IG;
 
@@ -244,7 +205,6 @@ namespace msckf_mono
       "\n--b_g " << init_imu_state_.b_g.transpose() <<
       "\n--g " << init_imu_state_.g.transpose());
     
-    T_world_vicon1 = T_vicon_world.inverse();
   }
 
   void RosInterface::setup_track_handler()
@@ -295,39 +255,12 @@ namespace msckf_mono
       ,-0.0257744366974,  0.00375618835797, 0.999660727178,    0.009810730590
       ,0.0,  0.0, 0.0,1.000000000000;
     
-    // ROS_INFO_STREAM("Has " << ros_param_list.size() << " readings");
-    // for (int32_t i = 0; i < ros_param_list.size(); ++i) 
-    // {
-    //   // ROS_ASSERT(ros_param_list[i].getType() == XmlRpc::XmlRpcValue::TypeArray);
-    //   for(int32_t j=0; j<ros_param_list[i].size(); ++j){
-    //     ROS_ASSERT(ros_param_list[i][j].getType() == XmlRpc::XmlRpcValue::TypeDouble);
-    //     T_cam_imu(i,j) = static_cast<double>(ros_param_list[i][j]);
-    //   }
-    // }
-
     R_cam_imu_ =  T_cam_imu.block<3,3>(0,0);//T_bs
     p_cam_imu_ =  T_cam_imu.block<3,1>(0,3);
 
     R_imu_cam_ = R_cam_imu_.transpose();
     p_imu_cam_ = R_imu_cam_ * (-1. * p_cam_imu_);
 
-    T_world_vicon1 = Isometry3f::Identity();
-
-    // const Eigen::AngleAxisf roll_angle(0, Eigen::Vector3f::UnitX());
-    // const Eigen::AngleAxisf pitch_angle(-1.5707, Eigen::Vector3f::UnitY());// circle:-
-    // const Eigen::AngleAxisf yaw_angle(3.14159, Eigen::Vector3f::UnitZ());
-    // Eigen::Quaternionf q = yaw_angle * pitch_angle * roll_angle;
-    // T_vicon_imu.linear() = q.toRotationMatrix();
-    // T_vicon_imu.translation() << 0.0,0.0,0.0;
-
-
-    T_vicon_imu.linear() << 0.33638, -0.01749,  0.94156,  
-         -0.02078, -0.99972, -0.01114, 
-          0.94150, -0.01582, -0.33665;
-
-    T_vicon_imu.translation() << 0.06901,-0.02781,-0.12395;
-    
-    // T_vicon_imu = T_vicon_imu.inverse();
     // setup camera parameters
     camera_.f_u = intrinsics[0];
     camera_.f_v = intrinsics[1];

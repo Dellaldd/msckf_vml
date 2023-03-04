@@ -7,7 +7,7 @@ SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -msse4.2 -msse -msse2 -mavx -
 SET(CMAKE_BUILD_TYPE "RelWithDebInfo")
 
 IF(NOT CMAKE_BUILD_TYPE)
-  # SET(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build, options are: None (CMAKE_CXX_FLAGS or CMAKE_C_FLAGS used) Debug Release RelWithDebInfo MinSizeRel." FORCE)
+  SET(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build, options are: None (CMAKE_CXX_FLAGS or CMAKE_C_FLAGS used) Debug Release RelWithDebInfo MinSizeRel." FORCE)
 ENDIF()
 
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -std=c++14 -DEIGEN_NO_DEBUG")
@@ -17,11 +17,11 @@ ELSE()
   SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} -msse -msse4.2 -msse2")
 ENDIF()
 SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS} -std=c++14 -g")
-include_directories("/usr/include/eigen3")
+
 find_package(cmake_modules REQUIRED)
-find_package(Eigen3 REQUIRED)
+find_package(Eigen REQUIRED)
 find_package(OpenCV REQUIRED)
-SET( EIGEN3_INCLUDE_DIR "/usr/include/eigen3" )
+
 # separate install -- https://github.com/uzh-rpg/fast
 find_package(fast REQUIRED)
 
@@ -57,7 +57,7 @@ add_message_files(
 ## catkin specific configuration ##
 ###################################
 catkin_package(
-  DEPENDS Eigen3
+  DEPENDS Eigen
   INCLUDE_DIRS include
   LIBRARIES msckf_mono
 )
@@ -71,7 +71,7 @@ catkin_package(
 # include_directories(include)
 include_directories(
   include
-  ${Eigen3_INCLUDE_DIRS}
+  ${Eigen_INCLUDE_DIRS}
   ${OpenCV_DIR}
   ${catkin_INCLUDE_DIRS}
   ${Boost_INCLUDE_DIRS}
@@ -96,6 +96,11 @@ add_library(msckf_mono
 target_link_libraries(msckf_mono
   ${LINK_LIBS})
 
+add_executable(asl_msckf datasets/asl_msckf.cpp datasets/asl_readers.cpp)
+target_link_libraries(asl_msckf msckf_mono ${LINK_LIBS})
+
+add_executable(asl_msckf_no_ground_truth datasets/asl_msckf_no_ground_truth.cpp datasets/asl_readers.cpp)
+target_link_libraries(asl_msckf_no_ground_truth msckf_mono ${LINK_LIBS})
 
 add_executable(msckf_mono_node src/msckf_mono_node.cpp)
 target_link_libraries(msckf_mono_node msckf_mono ${LINK_LIBS})

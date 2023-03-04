@@ -39,9 +39,7 @@ namespace msckf_mono
       image_transport::Subscriber image_sub_;
       image_transport::Publisher track_image_pub_;
       ros::Publisher odom_pub_;
-      ros::Publisher gt_track_pub_;
       ros::Subscriber imu_sub_;
-      ros::Subscriber gt_sub_;
 
       void load_parameters();
 
@@ -59,9 +57,6 @@ namespace msckf_mono
 
       Matrix3<float> R_cam_imu_;
       Vector3<float> p_cam_imu_;
-      Isometry3f T_vicon_imu;
-      Isometry3f T_world_vicon1;
-      Isometry3f T_vicon_world;
       std::string camera_model_;
       cv::Mat K_;
       std::string distortion_model_;
